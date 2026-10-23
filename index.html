@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Retoucheur EXIF</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600&display=swap">
+<style>
+/* Layout: one narrow column, phone-first; each EXIF group is a labelled panel with its tag IDs shown as margin notes. */
+:root{
+  --bg:#eceff2; --panel:#ffffff; --ink:#18212b; --muted:#5b6673; --line:#d3d9e0;
+  --accent:#b45a14; --accent-ink:#ffffff; --accent-soft:#f6e7da;
+  --ok:#1f7a4d; --ok-soft:#e0f1e8; --warn:#8a5a00; --warn-soft:#fbf0d4; --err:#b3261e; --err-soft:#fbe3e1;
+  --f-display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12171d; --panel:#1b222a; --ink:#e4e8ed; --muted:#9aa5b1; --line:#2c3640;
+  --accent:#e08a45; --accent-ink:#1a1006; --accent-soft:#3a2716;
+  --ok:#6fcf9b; --ok-soft:#173326; --warn:#e7b85a; --warn-soft:#352a12; --err:#f08a80; --err-soft:#3a1c1a;
+  color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12171d; --panel:#1b222a; --ink:#e4e8ed; --muted:#9aa5b1; --line:#2c3640;
+  --accent:#e08a45; --accent-ink:#1a1006; --accent-soft:#3a2716;
+  --ok:#6fcf9b; --ok-soft:#173326; --warn:#e7b85a; --warn-soft:#352a12; --err:#f08a80; --err-soft:#3a1c1a;
+  color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:620px;margin:0 auto;padding-block:20px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
+header{display:flex;flex-direction:column;gap:4px}
+h1{font-family:var(--f-display);font-weight:600;font-size:1.9rem;letter-spacing:-.01em;margin:0;text-wrap:balance}
+.lede{margin:0;color:var(--muted);max-width:60ch}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.panel h2{font-family:var(--f-display);font-weight:600;font-size:1.05rem;margin:0;display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.tag{font-family:var(--f-mono);font-size:.72rem;color:var(--muted);font-weight:400;letter-spacing:.02em}
+.pick{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.btn{font:inherit;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:10px 14px;cursor:pointer;min-height:44px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);width:100%;font-size:1rem}
+.btn.primary:disabled{opacity:.5;cursor:not-allowed}
+.btn:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.picker{position:relative;display:inline-flex;align-items:center;overflow:hidden}
+.picker input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:100px}
+.picker:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.photo{display:grid;grid-template-columns:96px 1fr;gap:14px;align-items:start}
+.thumb{width:96px;aspect-ratio:3/4;max-width:100%;object-fit:cover;border-radius:6px;background:var(--line);display:block}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:.88rem;min-width:0}
+dt{color:var(--muted)}
+dd{margin:0;min-width:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-family:var(--f-mono);font-size:.72rem;padding:2px 8px;border-radius:999px;background:var(--bg);border:1px solid var(--line);color:var(--muted)}
+.chip.on{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.banner{font-size:.85rem;padding:8px 12px;border-radius:8px;background:var(--accent-soft);color:var(--ink)}
+.field{display:flex;flex-direction:column;gap:4px;min-width:0}
+.field label{font-size:.82rem;font-weight:600}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:440px){.row{grid-template-columns:1fr}}
+input[type=text],input[type=datetime-local],input[type=number],select{font:inherit;font-family:var(--f-mono);font-size:.95rem;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:9px 10px;width:100%;min-height:44px;min-width:0}
+.hint{font-size:.8rem;color:var(--muted);margin:0}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg input{position:absolute;opacity:0}
+.seg label{text-align:center;padding:9px 4px;cursor:pointer;font-size:.88rem;font-weight:600;color:var(--muted);border-left:1px solid var(--line)}
+.seg label:first-of-type{border-left:0}
+.seg input:checked+label{background:var(--accent-soft);color:var(--ink)}
+.seg input:focus-visible+label{outline:2px solid var(--accent);outline-offset:-2px}
+.readout{font-family:var(--f-mono);font-size:.85rem;padding:8px 10px;border-radius:8px;background:var(--bg)}
+.readout.bad{background:var(--err-soft);color:var(--err)}
+a{color:var(--accent)}
+.check{display:flex;gap:8px;align-items:center;font-size:.88rem}
+.check input{width:18px;height:18px;accent-color:var(--accent)}
+.status{font-size:.88rem;padding:10px 12px;border-radius:8px}
+.status.ok{background:var(--ok-soft);color:var(--ok)}
+.status.warn{background:var(--warn-soft);color:var(--warn)}
+.status.err{background:var(--err-soft);color:var(--err)}
+.verify{margin:0;padding:0;list-style:none;font-size:.85rem;display:flex;flex-direction:column;gap:2px}
+.verify li{display:grid;grid-template-columns:150px 1fr;gap:8px}
+.verify code{font-family:var(--f-mono);font-size:.78rem;color:var(--muted)}
+@media (max-width:440px){.verify li{grid-template-columns:1fr;gap:0;margin-bottom:4px}}
+.foot{font-size:.8rem;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+.foot p{margin:0;max-width:65ch}
+.drop{outline:2px dashed var(--accent);outline-offset:4px}
+</style>
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+<div class="wrap" id="app">
+  <header>
+    <h1>Retoucheur EXIF</h1>
+    <p class="lede">Change la date de prise de vue et la position GPS d'une photo JPEG. L'image n'est pas recompressée et l'Ultra HDR est conservé. Tout reste dans ton navigateur.</p>
+  </header>
+
+  <section class="panel" id="srcPanel">
+    <div class="pick">
+      <span class="btn picker">Choisir une photo<input type="file" id="file" accept="image/*" aria-label="Choisir une photo"></span>
+      <span class="hint" id="pickHint">ou glisse un fichier .jpg ici</span>
+    </div>
+    <div class="banner" id="sampleBanner">Exemple chargé (photo factice). Choisis ta photo pour commencer.</div>
+    <div class="photo">
+      <img class="thumb" id="thumb" alt="Aperçu de la photo">
+      <dl id="info"></dl>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="status warn" id="xmpWarn" hidden></div>
+  </section>
+
+  <section class="panel">
+    <h2>Date et heure de prise de vue <span class="tag">DateTimeOriginal · 0x9003</span></h2>
+    <div class="row">
+      <div class="field">
+        <label for="dt">Date et heure locales</label>
+        <input type="datetime-local" id="dt" step="1">
+      </div>
+      <div class="field">
+        <label for="tz">Fuseau horaire</label>
+        <select id="tz"></select>
+      </div>
+    </div>
+    <p class="hint" id="dtHint"></p>
+    <div><button class="btn" type="button" id="dtReset">Remettre la date d'origine</button></div>
+  </section>
+
+  <section class="panel">
+    <h2>Position GPS <span class="tag">GPS IFD · 0x8825</span></h2>
+    <div class="seg" role="radiogroup" aria-label="Action sur la position">
+      <input type="radio" name="gps" id="gKeep" value="keep" checked><label for="gKeep">Garder</label>
+      <input type="radio" name="gps" id="gSet" value="set"><label for="gSet">Modifier</label>
+      <input type="radio" name="gps" id="gDel" value="remove"><label for="gDel">Supprimer</label>
+    </div>
+    <div id="gpsEdit" hidden>
+      <div class="field">
+        <label for="coords">Coordonnées</label>
+        <input type="text" id="coords" inputmode="text" autocomplete="off" placeholder="48.85837, 2.29448">
+        <p class="hint">Colle des coordonnées décimales (« 48.85837, 2.29448 ») ou en degrés (48°51'30"N 2°17'40"E). Dans Google Maps, un appui long sur le lieu affiche les coordonnées ; touche-les pour les copier.</p>
+      </div>
+      <div class="readout" id="coordOut">—</div>
+      <div class="field" style="margin-top:10px">
+        <label for="alt">Altitude en mètres (facultatif)</label>
+        <input type="number" id="alt" step="0.1" inputmode="decimal" placeholder="35">
+      </div>
+    </div>
+    <p class="hint" id="gpsHint"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Enregistrer</h2>
+    <div class="field">
+      <label for="fname">Nom du fichier</label>
+      <input type="text" id="fname" autocomplete="off">
+    </div>
+    <label class="check"><input type="checkbox" id="autoName" checked> Nommer d'après la nouvelle date (IMG_AAAAMMJJ_HHMMSS)</label>
+    <button class="btn primary" type="button" id="save">Enregistrer la photo modifiée</button>
+    <div class="status" id="status" hidden></div>
+    <ul class="verify" id="verify" hidden></ul>
+  </section>
+
+  <div class="foot">
+    <p>La photo d'origine n'est jamais modifiée : tu obtiens une copie. Sur Android, elle arrive dans Téléchargements, et Google Photos la classe à la nouvelle date.</p>
+    <p>Envoyée par WhatsApp, Instagram ou Messenger, la photo perd ces informations. Pour les garder, envoie-la en tant que fichier ou document.</p>
+  </div>
+</div>
+
+<script>
+const SAMPLE_B64="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xxrc+3y5IbfbnPlRg7vruz+lYewkae0R3uparZ6TbGe7mVOCVTI3Pjso79R+fNeXa3rV1rl6Z5ztRciKIHiMf1Pqe/5AVJpZrmVpZ5Xlkbq7sWJ/E0zFb06ahqZyncZijFPxRitSBmKKfiigB+KMU/FGKAGYoxT8UYoAZijFPxRigBmKMU/FGKAGYoxT8UYoAZijFPxRigBmKMU/FGKAGYoxT8UYoAZijFPxRigBmKMU/FGKAGYoxT8UYoAZiin4ooAfijFPxRigBmKMU/FGKAGYoxT8UYoAZijFPxRigBmKMU/FGKAGYoxT8UYoAZijFPxRigBmKMU/FGKAGYoxT8UYoAZijFPxRigBmKMUSSRxDMjqv1PWqM2qAHEKZ/2m7/hRcdi9iisRrq4ZsmZ8n0OKKnmHY6HFGKfijFUSMxRin4oxQAzFGKfijFADMUYp+KMUAMxRin4oxQAzFGKfijFADMUYp+KMUAMxRin4oxQAzFGKrz6jbQjhhI3YIc/rWbPqdxMCFIjX/Z6/nSuOxqTXUEAO+QZH8I5P5VnTarIxIhUIOxPJqhRU3HYVmZ2LMxYnuTmkoopDCiiigDrMUYp+KMVoQMxRin4oxQAzFGKfijFADMUYp+KMUAMxRin4oxQAzFGKfio5ZooFzLIqDBIyev09aAFxTXZY1LOwVR1JOBWbca2A222jBAP3n7/hWXNcTXDbpZC57Z6D8KVx2Ne51aGLKwjzW9f4R/jWZcX09zw74X+6vAqvRU3KsFFFFIAooooAKKKKACiiigDssUYp+KMVoQMxRin4oxQAzFGKfijFADMUYp+KoXWrWluvyuJnxwqHP5mgC5iq9xe21qD5ko3D+AHLflWJc6zdTgqpEK5/g6/n/hiqFTcqxqXGuTOSIEEa9mPLf4Vmu7SMWdizHqWOTTaKVxhRRRSAKKKKACiiigAooooAKKKKACiiigDuMUYp+KMVoQMxRimz3EFsu6aVIxgkbjyceg71j3fiIBttpEGAP35Oh+g/L/Ci47Gw7JEheR1RR1LHAFZd5rsEOUtx5z9M9FH+P+eawri6nun3Tys5HTPQfQdqiqbjsWrvUrm84kfCf3F4H/1+neqtFFSMKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigDtLrUbSzDebMu4fwKct0z0/wAaxLrxHO5ZbZFiXszDLdfy/nWNRTuKw55HlcvI7Ox6sxyTTaKKQwooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//9k=";
+
+/* ---------- petits utilitaires binaires ---------- */
+const TS={1:1,2:1,3:2,4:4,5:8,6:1,7:1,8:2,9:4,10:8,11:4,12:8};
+const $=id=>document.getElementById(id);
+function concat(arrs){let n=0;for(const a of arrs)n+=a.length;const o=new Uint8Array(n);let p=0;for(const a of arrs){o.set(a,p);p+=a.length}return o}
+const latin1=(u8,s,e)=>{let r="";for(let i=s;i<e;i++)r+=String.fromCharCode(u8[i]);return r};
+
+class Tiff{
+  constructor(u8){this.b=u8;this.le=u8[0]===0x49;this.dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);this.extra=[];this.extraLen=0}
+  u16(o){return this.dv.getUint16(o,this.le)} u32(o){return this.dv.getUint32(o,this.le)}
+  w16(o,v){this.dv.setUint16(o,v,this.le)} w32(o,v){this.dv.setUint32(o,v,this.le)}
+  e16(v){const a=new Uint8Array(2);new DataView(a.buffer).setUint16(0,v,this.le);return a}
+  e32(v){const a=new Uint8Array(4);new DataView(a.buffer).setUint32(0,v,this.le);return a}
+  ok(o,n){return o>=0&&o+n<=this.b.length}
+  parseIFD(off){
+    if(!off||!this.ok(off,2))return null;
+    const n=this.u16(off); if(!this.ok(off,2+n*12+4)||n>1000)return null;
+    const entries=[];
+    for(let i=0;i<n;i++){const p=off+2+i*12;const tag=this.u16(p),type=this.u16(p+2),count=this.u32(p+4);
+      const size=(TS[type]||1)*count;const inline=size<=4;const vOff=inline?p+8:this.u32(p+8);
+      entries.push({tag,type,count,size,inline,vOff,p,raw:this.b.slice(p+8,p+12)})}
+    return {off,n,entries,next:this.u32(off+2+n*12)};
+  }
+  val(e){if(!e||!this.ok(e.vOff,e.size))return null;return this.b.subarray(e.vOff,e.vOff+e.size)}
+  ascii(e){const v=this.val(e);if(!v)return null;let s="";for(const c of v){if(!c)break;s+=String.fromCharCode(c)}return s}
+  rationals(e){const v=this.val(e);if(!v)return null;const dv=new DataView(v.buffer,v.byteOffset,v.byteLength);const r=[];for(let i=0;i<e.count;i++){const n=dv.getUint32(i*8,this.le),d=dv.getUint32(i*8+4,this.le);r.push(d?n/d:0)}return r}
+  num(e){const v=this.val(e);if(!v)return null;const dv=new DataView(v.buffer,v.byteOffset,v.byteLength);return e.type===3?dv.getUint16(0,this.le):e.type===4?dv.getUint32(0,this.le):v[0]}
+  zero(o,n){if(this.ok(o,n))this.b.fill(0,o,o+n)}
+  append(data){ // retourne l'offset (aligné sur 2 octets)
+    if((this.b.length+this.extraLen)%2){this.extra.push(new Uint8Array(1));this.extraLen++}
+    const off=this.b.length+this.extraLen;this.extra.push(data);this.extraLen+=data.length;return off}
+  bytes(){return concat([this.b,...this.extra])}
+  /* changes: Map tag -> {type,count,data:Uint8Array} ou null (supprimer). Retourne le nouvel offset de l'IFD. */
+  editIFD(ifd,changes){
+    const map=new Map(ifd.entries.map(e=>[e.tag,{...e}]));
+    let structural=false;
+    for(const [tag,ch] of changes){
+      const old=map.get(tag);
+      if(ch===null){if(old){if(!old.inline)this.zero(old.vOff,old.size);map.delete(tag);structural=true}continue}
+      const d=ch.data;let raw;
+      if(d.length<=4){if(old&&!old.inline)this.zero(old.vOff,old.size);raw=new Uint8Array(4);raw.set(d)}
+      else if(old&&!old.inline&&d.length<=old.size&&this.ok(old.vOff,old.size)){this.zero(old.vOff,old.size);this.b.set(d,old.vOff);raw=old.raw}
+      else{if(old&&!old.inline)this.zero(old.vOff,old.size);raw=this.e32(this.append(d))}
+      if(!old)structural=true;
+      map.set(tag,{...(old||{}),tag,type:ch.type,count:ch.count,raw,dirty:true});
+    }
+    if(!structural&&ifd.off>0){
+      for(const e of map.values())if(e.dirty){this.w16(e.p+2,e.type);this.w32(e.p+4,e.count);this.b.set(e.raw,e.p+8)}
+      return ifd.off;
+    }
+    if(ifd.off>0)this.zero(ifd.off,2+ifd.n*12+4);
+    const list=[...map.values()].sort((a,b)=>a.tag-b.tag);
+    const out=new Uint8Array(2+list.length*12+4);const dv=new DataView(out.buffer);
+    dv.setUint16(0,list.length,this.le);
+    list.forEach((e,i)=>{const p=2+i*12;dv.setUint16(p,e.tag,this.le);dv.setUint16(p+2,e.type,this.le);dv.setUint32(p+4,e.count,this.le);out.set(e.raw,p+8)});
+    dv.setUint32(2+list.length*12,ifd.next||0,this.le);
+    return this.append(out);
+  }
+  zeroIFD(ifd){for(const e of ifd.entries)if(!e.inline)this.zero(e.vOff,e.size);this.zero(ifd.off,2+ifd.n*12+4)}
+}
+const enc={
+  ascii:s=>{const a=new Uint8Array(s.length+1);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i)&0xff;return {type:2,count:a.length,data:a}},
+  long:(t,v)=>({type:4,count:1,data:t.e32(v)}),
+  bytes:arr=>({type:1,count:arr.length,data:Uint8Array.from(arr)}),
+  rat:(t,list)=>{const a=new Uint8Array(list.length*8);const dv=new DataView(a.buffer);list.forEach(([n,d],i)=>{dv.setUint32(i*8,n,t.le);dv.setUint32(i*8+4,d,t.le)});return {type:5,count:list.length,data:a}},
+};
+
+/* ---------- JPEG ---------- */
+function parseJpeg(u8){
+  if(u8[0]!==0xFF||u8[1]!==0xD8)throw new Error("Ce fichier n'est pas un JPEG. Les photos HEIC ou PNG ne sont pas prises en charge.");
+  const segs=[];let p=2;
+  while(p+4<=u8.length){
+    if(u8[p]!==0xFF)throw new Error("Structure JPEG illisible.");
+    const m=u8[p+1];
+    if(m===0xFF){p++;continue}
+    if(m===0x01||(m>=0xD0&&m<=0xD8)){p+=2;continue}
+    if(m===0xDA||m===0xD9)break;
+    const L=(u8[p+2]<<8)|u8[p+3];
+    segs.push({m,start:p,end:p+2+L,data:p+4});p+=2+L;
+  }
+  const isExif=s=>s.m===0xE1&&latin1(u8,s.data,s.data+6)==="Exif\0\0";
+  const isMpf=s=>s.m===0xE2&&latin1(u8,s.data,s.data+4)==="MPF\0";
+  const isXmp=s=>s.m===0xE1&&latin1(u8,s.data,s.data+29)==="http://ns.adobe.com/xap/1.0/\0";
+  return {segs,exif:segs.find(isExif)||null,mpf:segs.find(isMpf)||null,xmp:segs.filter(isXmp)};
+}
+
+function readMeta(u8){
+  const j=parseJpeg(u8);const m={jpeg:j,hasExif:!!j.exif,ultraHdr:false,xmpFields:[]};
+  for(const x of j.xmp){const s=latin1(u8,x.data,x.end);if(/hdrgm/.test(s))m.ultraHdr=true;
+    for(const k of ["DateTimeOriginal","CreateDate","DateCreated","GPSLatitude","GPSLongitude"])if(new RegExp(k).test(s))m.xmpFields.push(k)}
+  if(j.mpf)m.mpf=true;
+  if(!j.exif)return m;
+  const t=new Tiff(u8.slice(j.exif.data+6,j.exif.end));
+  const i0=t.parseIFD(t.u32(4));if(!i0)return m;
+  const g=(ifd,tag)=>ifd&&ifd.entries.find(e=>e.tag===tag);
+  m.make=t.ascii(g(i0,0x010F));m.model=t.ascii(g(i0,0x0110));m.dateTime=t.ascii(g(i0,0x0132));
+  const ex=g(i0,0x8769)?t.parseIFD(t.num(g(i0,0x8769))):null;
+  if(ex){m.dto=t.ascii(g(ex,0x9003));m.dtd=t.ascii(g(ex,0x9004));m.off=t.ascii(g(ex,0x9011))||t.ascii(g(ex,0x9010))}
+  const gp=g(i0,0x8825)?t.parseIFD(t.num(g(i0,0x8825))):null;
+  if(gp){const la=t.rationals(g(gp,2)),lo=t.rationals(g(gp,4));
+    if(la&&lo&&la.length===3&&lo.length===3){
+      let lat=la[0]+la[1]/60+la[2]/3600,lon=lo[0]+lo[1]/60+lo[2]/3600;
+      if((t.ascii(g(gp,1))||"N")==="S")lat=-lat;if((t.ascii(g(gp,3))||"E")==="W")lon=-lon;
+      m.gps={lat,lon};const al=t.rationals(g(gp,6));if(al)m.gps.alt=al[0]*((t.num(g(gp,5))===1)?-1:1);
+    } else m.gpsPresent=true;
+  }
+  return m;
+}
+
+/* ---------- écriture ---------- */
+function dms(v){v=Math.abs(v);const d=Math.floor(v);const mf=(v-d)*60;const mi=Math.floor(mf);const s=Math.round((mf-mi)*60*10000);return [[d,1],[mi,1],[s,10000]]}
+
+function writeMeta(u8,opt){
+  const j=parseJpeg(u8);
+  let tiffBytes;
+  if(j.exif)tiffBytes=u8.slice(j.exif.data+6,j.exif.end);
+  else{tiffBytes=new Uint8Array([0x49,0x49,0x2A,0,8,0,0,0, 0,0, 0,0,0,0])} // TIFF vide little-endian
+  const t=new Tiff(tiffBytes);
+  const g=(ifd,tag)=>ifd&&ifd.entries.find(e=>e.tag===tag);
+  const i0=t.parseIFD(t.u32(4))||{off:-1,n:0,entries:[],next:0};
+  const ch0=new Map();
+  // Date
+  if(opt.date){
+    const s=opt.date.exif; // "YYYY:MM:DD HH:MM:SS"
+    ch0.set(0x0132,enc.ascii(s));
+    const exE=g(i0,0x8769);const ex=exE?t.parseIFD(t.num(exE)):null;
+    const chE=new Map([[0x9003,enc.ascii(s)],[0x9004,enc.ascii(s)]]);
+    if(opt.date.offset){for(const tg of [0x9010,0x9011,0x9012])chE.set(tg,enc.ascii(opt.date.offset))}
+    const newEx=t.editIFD(ex||{off:-1,n:0,entries:[],next:0},chE);
+    if(!ex||newEx!==ex.off)ch0.set(0x8769,enc.long(t,newEx));
+  }
+  // GPS
+  const gpE=g(i0,0x8825);const gp=gpE?t.parseIFD(t.num(gpE)):null;
+  if(opt.gps==="remove"){if(gp)t.zeroIFD(gp);if(gpE)ch0.set(0x8825,null)}
+  else if(opt.gps||(gp&&opt.date)){
+    const chG=new Map();
+    if(opt.gps){const {lat,lon,alt}=opt.gps;
+      chG.set(0x0000,enc.bytes([2,2,0,0]));
+      chG.set(0x0001,enc.ascii(lat<0?"S":"N"));chG.set(0x0002,enc.rat(t,dms(lat)));
+      chG.set(0x0003,enc.ascii(lon<0?"W":"E"));chG.set(0x0004,enc.rat(t,dms(lon)));
+      if(alt!=null&&!isNaN(alt)){chG.set(0x0005,enc.bytes([alt<0?1:0]));chG.set(0x0006,enc.rat(t,[[Math.round(Math.abs(alt)*100),100]]))}
+      else{chG.set(0x0005,null);chG.set(0x0006,null)}
+    }
+    if(opt.date&&opt.date.utc){const u=opt.date.utc;
+      chG.set(0x0007,enc.rat(t,[[u.getUTCHours(),1],[u.getUTCMinutes(),1],[u.getUTCSeconds(),1]]));
+      chG.set(0x001D,enc.ascii(`${u.getUTCFullYear()}:${String(u.getUTCMonth()+1).padStart(2,"0")}:${String(u.getUTCDate()).padStart(2,"0")}`));
+    } else if(gp&&opt.gps){/* garde l'horodatage GPS existant */}
+    const newG=t.editIFD(gp||{off:-1,n:0,entries:[],next:0},chG);
+    if(!gp||newG!==gp.off)ch0.set(0x8825,enc.long(t,newG));
+  }
+  if(ch0.size){const n0=t.editIFD(i0,ch0);if(n0!==i0.off)t.w32(4,n0)}
+  const tiff=t.bytes();
+  const segLen=2+6+tiff.length;
+  if(segLen>65535)throw new Error("Les métadonnées dépassent la taille maximale d'un bloc EXIF.");
+  const app1=concat([new Uint8Array([0xFF,0xE1,segLen>>8,segLen&255]),new Uint8Array([69,120,105,102,0,0]),tiff]);
+  let cutS,cutE;
+  if(j.exif){cutS=j.exif.start;cutE=j.exif.end}
+  else{const first=j.segs[0];cutS=cutE=(first&&first.m===0xE0)?first.end:2}
+  const out=concat([u8.subarray(0,cutS),app1,u8.subarray(cutE)]);
+  const delta=app1.length-(cutE-cutS);
+  // MPF (Ultra HDR) : les offsets sont relatifs à l'en-tête MPF. S'il est placé avant le bloc EXIF, l'image de gain se décale mais pas l'en-tête.
+  if(j.mpf&&j.mpf.end<=cutS&&delta!==0)patchMpf(out,j.mpf.start,delta);
+  return out;
+}
+function patchMpf(u8,segStart,delta){
+  const base=segStart+4+4;const t=new Tiff(u8.subarray(base));
+  const i0=t.parseIFD(t.u32(4));if(!i0)return;
+  const e=i0.entries.find(x=>x.tag===0xB002);if(!e)return;
+  for(let k=0;k<e.count/16;k++){const p=e.vOff+k*16+8;if(!t.ok(p,4))break;const v=t.u32(p);if(v)t.w32(p,v+delta)}
+}
+
+/* ---------- interface ---------- */
+const OFFSETS=(()=>{const l=[];for(let h=-12;h<=14;h++)l.push(h*60);[-570,-210,210,270,330,345,390,570,630,765].forEach(x=>l.push(x));return [...new Set(l)].sort((a,b)=>a-b)})();
+const fmtOff=min=>{const s=min<0?"-":"+";min=Math.abs(min);return s+String(Math.floor(min/60)).padStart(2,"0")+":"+String(min%60).padStart(2,"0")};
+const parseOff=s=>{const m=/^([+-])(\d\d):(\d\d)$/.exec(s||"");return m?(m[1]==="-"?-1:1)*(+m[2]*60+ +m[3]):null};
+const exifToLocal=s=>{const m=/^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/.exec(s||"");return m?`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}`:""};
+const localToExif=v=>{const m=/^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d)(?::(\d\d))?/.exec(v);return m?`${m[1]}:${m[2]}:${m[3]} ${m[4]}:${m[5]}:${m[6]||"00"}`:null};
+const prettyDate=exif=>{const v=exifToLocal(exif);if(!v)return "—";const d=new Date(v);return d.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"long",year:"numeric"})+" · "+v.slice(11)};
+const fmtCoord=(lat,lon)=>`${Math.abs(lat).toFixed(5).replace(".",",")}° ${lat<0?"S":"N"} · ${Math.abs(lon).toFixed(5).replace(".",",")}° ${lon<0?"O":"E"}`;
+const sizeStr=n=>n>1048576?(n/1048576).toFixed(1).replace(".",",")+" Mo":Math.round(n/1024)+" Ko";
+
+function parseCoords(s){
+  s=(s||"").trim();if(!s)return null;
+  const dm=[...s.matchAll(/(-?\d+(?:[.,]\d+)?)\s*°\s*(?:(\d+(?:[.,]\d+)?)\s*['′’]\s*)?(?:(\d+(?:[.,]\d+)?)\s*(?:["″”]|'')\s*)?([NSEWO])?/gi)];
+  if(dm.length===2){const v=dm.map(m=>{let x=+m[1].replace(",",".")+(m[2]?+m[2].replace(",",".")/60:0)+(m[3]?+m[3].replace(",",".")/3600:0);const h=(m[4]||"").toUpperCase();if(h==="S"||h==="W"||h==="O")x=-Math.abs(x);return x});return valid(v[0],v[1])}
+  const fr=/^(-?\d+),(\d+)\s*[;, ]\s*(-?\d+),(\d+)$/.exec(s);
+  if(fr)return valid(+(fr[1]+"."+fr[2]),+(fr[3]+"."+fr[4]));
+  const nums=s.match(/-?\d+(?:\.\d+)?/g);
+  if(nums&&nums.length===2)return valid(+nums[0],+nums[1]);
+  return null;
+  function valid(a,b){return (Math.abs(a)<=90&&Math.abs(b)<=180)?{lat:a,lon:b}:null}
+}
+
+let cur=null; // {bytes,name,meta,isSample}
+const st={};
+
+function fillTz(){const sel=$("tz");sel.innerHTML="";for(const o of OFFSETS){const op=document.createElement("option");op.value=fmtOff(o);op.textContent="UTC"+fmtOff(o);sel.appendChild(op)}}
+fillTz();
+
+function load(bytes,name,isSample){
+  let meta;
+  try{meta=readMeta(bytes)}catch(e){showStatus("err",e.message);return}
+  cur={bytes,name,meta,isSample};
+  $("sampleBanner").hidden=!isSample;
+  const url=URL.createObjectURL(new Blob([bytes],{type:"image/jpeg"}));
+  const im=$("thumb");im.onload=()=>{$("dims").textContent=im.naturalWidth+" × "+im.naturalHeight};im.src=url;
+  const info=$("info");info.innerHTML="";
+  const add=(k,v,id)=>{const dt=document.createElement("dt");dt.textContent=k;const dd=document.createElement("dd");dd.textContent=v;if(id)dd.id=id;info.append(dt,dd)};
+  add("Fichier",name);add("Taille",sizeStr(bytes.length)+" · ","");info.lastChild.append(Object.assign(document.createElement("span"),{id:"dims"}));
+  add("Appareil",[meta.make,meta.model].filter(Boolean).join(" ")||"—");
+  add("Prise de vue",(meta.dto||meta.dateTime)?prettyDate(meta.dto||meta.dateTime)+(meta.off?" ("+meta.off+")":""):"aucune date EXIF");
+  add("Position",meta.gps?fmtCoord(meta.gps.lat,meta.gps.lon):"aucune");
+  const chips=$("chips");chips.innerHTML="";
+  const chip=(t,on)=>{const c=document.createElement("span");c.className="chip"+(on?" on":"");c.textContent=t;chips.appendChild(c)};
+  chip(meta.hasExif?"EXIF":"pas d'EXIF",meta.hasExif);if(meta.ultraHdr||meta.mpf)chip("Ultra HDR / MPF",true);if(meta.gps)chip("GPS",true);
+  const xw=$("xmpWarn");
+  if(meta.xmpFields.length){xw.hidden=false;xw.textContent="Le bloc XMP de cette photo contient aussi "+meta.xmpFields.join(", ")+". Seul l'EXIF est modifié ; certains logiciels pourraient lire l'ancienne valeur XMP."}else xw.hidden=true;
+  // champs
+  st.origLocal=exifToLocal(meta.dto||meta.dateTime);
+  $("dt").value=st.origLocal;
+  setTz(meta.off||null);
+  $("gpsHint").textContent=meta.gps?"Position actuelle : "+fmtCoord(meta.gps.lat,meta.gps.lon)+(meta.gps.alt!=null?" · "+Math.round(meta.gps.alt)+" m":"")
+    :"Aucune position dans ce fichier. Sur Android, le sélecteur de fichiers du navigateur peut masquer la position d'origine : c'est normal si ta galerie en affiche une.";
+  if(meta.gps){$("coords").value=meta.gps.lat.toFixed(6)+", "+meta.gps.lon.toFixed(6);if(meta.gps.alt!=null)$("alt").value=meta.gps.alt.toFixed(1)}else{$("coords").value="";$("alt").value=""}
+  $("gKeep").checked=true;
+  $("status").hidden=true;$("verify").hidden=true;
+  refresh();
+}
+function setTz(off){
+  let v=off&&parseOff(off)!=null?off:null;
+  if(!v){const loc=$("dt").value?new Date($("dt").value):new Date();v=fmtOff(-loc.getTimezoneOffset())}
+  if(![...$("tz").options].some(o=>o.value===v)){const op=document.createElement("option");op.value=v;op.textContent="UTC"+v;$("tz").appendChild(op)}
+  $("tz").value=v;st.origTz=v;
+}
+
+function gpsMode(){return document.querySelector('input[name=gps]:checked').value}
+function state(){
+  const local=$("dt").value;const exif=localToExif(local);
+  const dateChanged=!!exif&&(local.length===16?local+":00":local)!==st.origLocal||$("tz").value!==st.origTz;
+  const mode=gpsMode();const c=parseCoords($("coords").value);
+  return {local,exif,dateChanged,mode,c};
+}
+function refresh(){
+  if(!cur)return;
+  const s=state();
+  $("gpsEdit").hidden=s.mode!=="set";
+  const co=$("coordOut");
+  if(s.mode==="set"){if(s.c){co.className="readout";co.innerHTML="";co.append(fmtCoord(s.c.lat,s.c.lon)+" · ");const a=document.createElement("a");a.href=`https://www.openstreetmap.org/?mlat=${s.c.lat}&mlon=${s.c.lon}#map=16/${s.c.lat}/${s.c.lon}`;a.target="_blank";a.rel="noopener";a.textContent="voir sur la carte";co.append(a)}
+    else{co.className="readout bad";co.textContent=$("coords").value.trim()?"Coordonnées non reconnues. Exemple : 48.85837, 2.29448":"Saisis des coordonnées."}}
+  if(s.exif){const utc=new Date(s.local+(s.local.length===16?":00":"")+$("tz").value);
+    $("dtHint").textContent=s.dateChanged?"Nouvelle date : "+prettyDate(s.exif)+" (UTC"+$("tz").value+"), soit "+utc.toISOString().slice(0,19).replace("T"," ")+" en temps universel.":"Date d'origine conservée."}
+  else $("dtHint").textContent="Saisis une date complète.";
+  if($("autoName").checked)$("fname").value=s.exif&&s.dateChanged?"IMG_"+s.exif.replace(/[: ]/g,"").replace(/^(\d{8})/,"$1_")+".jpg":cur.name.replace(/\.(jpe?g)$/i,"")+"_modifiee.jpg";
+  const changes=s.dateChanged||s.mode==="remove"&&(cur.meta.gps||cur.meta.gpsPresent)||s.mode==="set"&&s.c;
+  $("save").disabled=!changes||(s.mode==="set"&&!s.c)||!s.exif;
+  $("save").textContent=changes?"Enregistrer la photo modifiée":"Aucune modification à enregistrer";
+}
+
+function showStatus(kind,msg){const e=$("status");e.className="status "+kind;e.textContent=msg;e.hidden=false}
+
+let dl=null;
+(async()=>{try{dl=await window.claude?.use?.("downloads")}catch(e){dl=null}})();
+
+async function save(){
+  const s=state();
+  const opt={};
+  if(s.dateChanged){opt.date={exif:s.exif,offset:$("tz").value,utc:new Date(s.local+(s.local.length===16?":00":"")+$("tz").value)}}
+  if(s.mode==="remove")opt.gps="remove";
+  if(s.mode==="set"){const a=parseFloat(String($("alt").value).replace(",","."));opt.gps={...s.c,alt:isNaN(a)?null:a}}
+  let out;
+  try{out=writeMeta(cur.bytes,opt)}catch(e){showStatus("err","Échec : "+e.message);return}
+  // vérification : relecture du fichier produit
+  let m2;try{m2=readMeta(out)}catch(e){showStatus("err","Le fichier produit est illisible, rien n'a été enregistré.");return}
+  const v=$("verify");v.innerHTML="";
+  const li=(k,val,tag)=>{const l=document.createElement("li");const a=document.createElement("span");a.innerHTML="";a.textContent=k+" ";const c=document.createElement("code");c.textContent=tag;a.append(c);const b=document.createElement("span");b.textContent=val;l.append(a,b);v.appendChild(l)};
+  li("Prise de vue",m2.dto?prettyDate(m2.dto)+(m2.off?" ("+m2.off+")":""):"—","0x9003");
+  li("Position",m2.gps?fmtCoord(m2.gps.lat,m2.gps.lon)+(m2.gps.alt!=null?" · "+m2.gps.alt.toFixed(1)+" m":""):"aucune","0x8825");
+  li("Ultra HDR",(cur.meta.mpf||cur.meta.ultraHdr)?(m2.mpf?"conservé":"perdu"):"absent à l'origine","MPF");
+  li("Taille",sizeStr(out.length),"");
+  v.hidden=false;
+  const name=$("fname").value.trim()||"photo.jpg";const fname=/\.jpe?g$/i.test(name)?name:name+".jpg";
+  const blob=new Blob([out],{type:"image/jpeg"});
+  if(dl){
+    try{await dl.save({filename:fname,data:blob});showStatus("ok","Photo enregistrée : "+fname+". Vérification de la copie ci-dessous.")}
+    catch(e){if(e&&e.code==="declined")showStatus("warn","Enregistrement annulé.");else if(e&&e.code==="rate_limited")showStatus("warn","Une demande d'enregistrement est déjà ouverte.");else fallback(blob,fname)}
+  } else fallback(blob,fname);
+}
+function fallback(blob,fname){
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=fname;document.body.appendChild(a);a.click();a.remove();
+  showStatus("ok","Photo prête : "+fname+". Si le téléchargement ne démarre pas, ouvre cette page dans l'appli Claude ou dans un navigateur.");
+}
+
+$("file").addEventListener("change",e=>{const f=e.target.files[0];if(f)readFile(f);e.target.value=""});
+function readFile(f){const r=new FileReader();r.onload=()=>load(new Uint8Array(r.result),f.name||"photo.jpg",false);r.onerror=()=>showStatus("err","Impossible de lire ce fichier.");r.readAsArrayBuffer(f)}
+["dt","tz","coords","alt"].forEach(id=>$(id).addEventListener("input",refresh));
+$("tz").addEventListener("change",refresh);
+$("autoName").addEventListener("change",refresh);
+$("fname").addEventListener("input",()=>{$("autoName").checked=false});
+document.querySelectorAll('input[name=gps]').forEach(r=>r.addEventListener("change",refresh));
+$("dtReset").addEventListener("click",()=>{$("dt").value=st.origLocal;$("tz").value=st.origTz;refresh()});
+$("save").addEventListener("click",save);
+const app=$("app");
+app.addEventListener("dragover",e=>{e.preventDefault();app.classList.add("drop")});
+app.addEventListener("dragleave",()=>app.classList.remove("drop"));
+app.addEventListener("drop",e=>{e.preventDefault();app.classList.remove("drop");const f=e.dataTransfer.files[0];if(f)readFile(f)});
+
+load(Uint8Array.from(atob(SAMPLE_B64),c=>c.charCodeAt(0)),"IMG_20261017_114933.jpg",true);
+</script>
+
+</body>
+</html>
