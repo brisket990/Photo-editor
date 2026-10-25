@@ -281,7 +281,8 @@ function readMeta(u8){
     if(la&&lo&&la.length===3&&lo.length===3){
       let lat=la[0]+la[1]/60+la[2]/3600,lon=lo[0]+lo[1]/60+lo[2]/3600;
       if((t.ascii(g(gp,1))||"N")==="S")lat=-lat;if((t.ascii(g(gp,3))||"E")==="W")lon=-lon;
-      m.gps={lat,lon};const al=t.rationals(g(gp,6));if(al)m.gps.alt=al[0]*((t.num(g(gp,5))===1)?-1:1);
+      if(lat===0&&lon===0)m.gpsMasked=true;
+      else{m.gps={lat,lon};const al=t.rationals(g(gp,6));if(al)m.gps.alt=al[0]*((t.num(g(gp,5))===1)?-1:1)}
     } else m.gpsPresent=true;
   }
   return m;
@@ -389,18 +390,18 @@ function load(bytes,name,isSample){
   add("Fichier",name);add("Taille",sizeStr(bytes.length)+" · ","");info.lastChild.append(Object.assign(document.createElement("span"),{id:"dims"}));
   add("Appareil",[meta.make,meta.model].filter(Boolean).join(" ")||"—");
   add("Prise de vue",(meta.dto||meta.dateTime)?prettyDate(meta.dto||meta.dateTime)+(meta.off?" ("+meta.off+")":""):"aucune date EXIF");
-  add("Position",meta.gps?fmtCoord(meta.gps.lat,meta.gps.lon):"aucune");
+  add("Position",meta.gps?fmtCoord(meta.gps.lat,meta.gps.lon):meta.gpsMasked?"masquée par Android (0, 0)":"aucune");
   showGpsBox(meta);
   const chips=$("chips");chips.innerHTML="";
   const chip=(t,on)=>{const c=document.createElement("span");c.className="chip"+(on?" on":"");c.textContent=t;chips.appendChild(c)};
-  chip(meta.hasExif?"EXIF":"pas d'EXIF",meta.hasExif);if(meta.ultraHdr||meta.mpf)chip("Ultra HDR / MPF",true);if(meta.gps)chip("GPS",true);
+  chip(meta.hasExif?"EXIF":"pas d'EXIF",meta.hasExif);if(meta.ultraHdr||meta.mpf)chip("Ultra HDR / MPF",true);if(meta.gps)chip("GPS",true);if(meta.gpsMasked)chip("GPS masqué",false);
   const xw=$("xmpWarn");
   if(meta.xmpFields.length){xw.hidden=false;xw.textContent="Le bloc XMP de cette photo contient aussi "+meta.xmpFields.join(", ")+". Seul l'EXIF est modifié ; certains logiciels pourraient lire l'ancienne valeur XMP."}else xw.hidden=true;
   // champs
   st.origLocal=exifToLocal(meta.dto||meta.dateTime);
   $("dt").value=st.origLocal;
   setTz(meta.off||null);
-  $("gpsHint").textContent=meta.gps?"Position actuelle : "+fmtCoord(meta.gps.lat,meta.gps.lon)+(meta.gps.alt!=null?" · "+Math.round(meta.gps.alt)+" m":"")
+  $("gpsHint").textContent=meta.gpsMasked?"Position masquée par Android : la copie que la page reçoit contient 0, 0. Si tu choisis « Garder », la copie modifiée gardera ce 0, 0. Choisis « Modifier » pour y mettre une vraie position, ou « Supprimer ».":meta.gps?"Position actuelle : "+fmtCoord(meta.gps.lat,meta.gps.lon)+(meta.gps.alt!=null?" · "+Math.round(meta.gps.alt)+" m":"")
     :"Aucune position dans ce fichier. Sur Android, le sélecteur de fichiers du navigateur peut masquer la position d'origine : c'est normal si ta galerie en affiche une.";
   if(meta.gps){$("coords").value=meta.gps.lat.toFixed(6)+", "+meta.gps.lon.toFixed(6);if(meta.gps.alt!=null)$("alt").value=meta.gps.alt.toFixed(1)}else{$("coords").value="";$("alt").value=""}
   $("gKeep").checked=true;
@@ -419,7 +420,7 @@ function showGpsBox(meta){
   if(has){const {lat,lon,alt}=meta.gps;$("gpsCopyField").value=lat.toFixed(6)+", "+lon.toFixed(6);
     sub.append(fmtCoord(lat,lon)+(alt!=null?" · altitude "+Math.round(alt)+" m":""));
     const a=document.createElement("a");a.href=`https://www.google.com/maps?q=${lat.toFixed(6)},${lon.toFixed(6)}`;a.target="_blank";a.rel="noopener";a.textContent="Ouvrir dans Google Maps";sub.append(a);
-  } else sub.textContent=meta.gpsPresent?"La photo contient un bloc GPS, mais sans coordonnées lisibles.":"Aucune position dans ce fichier. Si ta galerie en affiche une, c'est qu'Android l'a masquée au navigateur.";
+  } else sub.textContent=meta.gpsMasked?"Android a remplacé la position par 0, 0 avant de donner la photo au navigateur. La vraie position est toujours dans la photo d'origine, mais cette page ne peut pas la lire. Regarde-la dans ta galerie (détails de la photo).":meta.gpsPresent?"La photo contient un bloc GPS, mais sans coordonnées lisibles.":"Aucune position dans ce fichier. Si ta galerie en affiche une, c'est qu'Android l'a masquée au navigateur.";
   $("gpsCopy").textContent="Copier";
 }
 $("gpsCopy").addEventListener("click",()=>{
@@ -445,7 +446,7 @@ function refresh(){
     $("dtHint").textContent=s.dateChanged?"Nouvelle date : "+prettyDate(s.exif)+" (UTC"+$("tz").value+"), soit "+utc.toISOString().slice(0,19).replace("T"," ")+" en temps universel.":"Date d'origine conservée."}
   else $("dtHint").textContent="Saisis une date complète.";
   if($("autoName").checked)$("fname").value=s.exif&&s.dateChanged?"IMG_"+s.exif.replace(/[: ]/g,"").replace(/^(\d{8})/,"$1_")+".jpg":cur.name.replace(/\.(jpe?g)$/i,"")+"_modifiee.jpg";
-  const changes=s.dateChanged||s.mode==="remove"&&(cur.meta.gps||cur.meta.gpsPresent)||s.mode==="set"&&s.c;
+  const changes=s.dateChanged||s.mode==="remove"&&(cur.meta.gps||cur.meta.gpsPresent||cur.meta.gpsMasked)||s.mode==="set"&&s.c;
   $("save").disabled=!changes||(s.mode==="set"&&!s.c)||!s.exif;
   $("save").textContent=changes?"Enregistrer la photo modifiée":"Aucune modification à enregistrer";
 }
