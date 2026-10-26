@@ -166,6 +166,7 @@ a{color:var(--accent)}
     </div>
     <label class="check"><input type="checkbox" id="autoName" checked> Nommer d'après la nouvelle date (IMG_AAAAMMJJ_HHMMSS)</label>
     <button class="btn primary" type="button" id="save">Enregistrer la photo modifiée</button>
+    <button class="btn" type="button" id="replace" hidden>Remplacer la photo d'origine</button>
     <div class="status" id="status" hidden></div>
     <ul class="verify" id="verify" hidden></ul>
   </section>
@@ -448,15 +449,17 @@ function refresh(){
   if($("autoName").checked)$("fname").value=s.exif&&s.dateChanged?"IMG_"+s.exif.replace(/[: ]/g,"").replace(/^(\d{8})/,"$1_")+".jpg":cur.name.replace(/\.(jpe?g)$/i,"")+"_modifiee.jpg";
   const changes=s.dateChanged||s.mode==="remove"&&(cur.meta.gps||cur.meta.gpsPresent||cur.meta.gpsMasked)||s.mode==="set"&&s.c;
   $("save").disabled=!changes||(s.mode==="set"&&!s.c)||!s.exif;
-  $("save").textContent=changes?"Enregistrer la photo modifiée":"Aucune modification à enregistrer";
+  $("save").textContent=changes?(NATIVE?"Enregistrer une copie modifiée":"Enregistrer la photo modifiée"):"Aucune modification à enregistrer";
+  $("replace").disabled=$("save").disabled;
 }
 
 function showStatus(kind,msg){const e=$("status");e.className="status "+kind;e.textContent=msg;e.hidden=false}
 
+const NATIVE=window.AndroidBridge||null;
 let dl=null;
 (async()=>{try{dl=await window.claude?.use?.("downloads")}catch(e){dl=null}})();
 
-async function save(){
+async function save(mode){
   const s=state();
   const opt={};
   if(s.dateChanged){opt.date={exif:s.exif,offset:$("tz").value,utc:new Date(s.local+(s.local.length===16?":00":"")+$("tz").value)}}
@@ -475,6 +478,7 @@ async function save(){
   v.hidden=false;
   const name=$("fname").value.trim()||"photo.jpg";const fname=/\.jpe?g$/i.test(name)?name:name+".jpg";
   const blob=new Blob([out],{type:"image/jpeg"});
+  if(NATIVE){nativeSave(out,fname,mode);return}
   if(dl){
     try{await dl.save({filename:fname,data:blob});showStatus("ok","Photo enregistrée : "+fname+". Vérification de la copie ci-dessous.")}
     catch(e){if(e&&e.code==="declined")showStatus("warn","Enregistrement annulé.");else if(e&&e.code==="rate_limited")showStatus("warn","Une demande d'enregistrement est déjà ouverte.");else fallback(blob,fname)}
@@ -493,11 +497,44 @@ $("autoName").addEventListener("change",refresh);
 $("fname").addEventListener("input",()=>{$("autoName").checked=false});
 document.querySelectorAll('input[name=gps]').forEach(r=>r.addEventListener("change",refresh));
 $("dtReset").addEventListener("click",()=>{$("dt").value=st.origLocal;$("tz").value=st.origTz;refresh()});
-$("save").addEventListener("click",save);
+$("save").addEventListener("click",()=>save("copy"));
+$("replace").addEventListener("click",()=>save("replace"));
 const app=$("app");
 app.addEventListener("dragover",e=>{e.preventDefault();app.classList.add("drop")});
 app.addEventListener("dragleave",()=>app.classList.remove("drop"));
 app.addEventListener("drop",e=>{e.preventDefault();app.classList.remove("drop");const f=e.dataTransfer.files[0];if(f)readFile(f)});
+
+/* ---------- mode appli Android ---------- */
+let lastOut=null,busy=false;
+function nativeSave(out,fname,mode){
+  if(busy)return;busy=true;lastOut=out;
+  showStatus("warn",mode==="replace"?"Android va te demander l'autorisation de modifier la photo…":"Enregistrement…");
+  const r=new FileReader();
+  r.onload=()=>{const b64=String(r.result).split(",")[1];try{NATIVE.save(b64,fname,mode)}catch(e){busy=false;showStatus("err","Échec : "+e.message)}};
+  r.readAsDataURL(new Blob([out],{type:"image/jpeg"}));
+}
+window.nativeSaved=(ok,msg,mode)=>{
+  busy=false;
+  if(ok&&mode==="replace"&&lastOut){const n=cur.name;load(lastOut,n,false);cur.native=true;$("replace").hidden=false}
+  showStatus(ok?"ok":"warn",msg);
+};
+window.nativeError=msg=>showStatus("err",msg);
+window.nativePhotoReady=(name,original)=>{
+  fetch("/photo/current?t="+Date.now()).then(r=>{if(!r.ok)throw new Error("photo introuvable");return r.arrayBuffer()}).then(b=>{
+    load(new Uint8Array(b),name,false);cur.native=true;
+    let canRep=false;try{canRep=NATIVE.canReplace()}catch(e){}
+    $("replace").hidden=!canRep;
+    if(!original)showStatus("warn","L'appli n'a pas l'autorisation d'accéder à la position des photos : la position peut être masquée. Autorise « Photos et vidéos » et « Position des médias » dans les réglages de l'appli.");
+  }).catch(e=>showStatus("err","Impossible de lire la photo : "+e.message));
+};
+if(NATIVE){
+  const pk=document.querySelector(".picker");$("file").remove();
+  pk.setAttribute("role","button");pk.tabIndex=0;
+  const go=()=>{try{NATIVE.pick()}catch(e){showStatus("err","Impossible d'ouvrir la galerie.")}};
+  pk.addEventListener("click",go);pk.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go()}});
+  $("pickHint").textContent="ou partage une photo vers l'appli depuis ta galerie";
+  document.querySelector(".foot").innerHTML="<p>« Enregistrer une copie » crée une nouvelle photo dans la galerie (DCIM/Camera). « Remplacer la photo d'origine » modifie la photo elle-même, après ton accord.</p><p>Envoyée par WhatsApp, Instagram ou Messenger, la photo perd ces informations. Pour les garder, envoie-la en tant que fichier ou document.</p>";
+}
 
 load(Uint8Array.from(atob(SAMPLE_B64),c=>c.charCodeAt(0)),"IMG_20261017_114933.jpg",true);
 </script>

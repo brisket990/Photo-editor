@@ -1,0 +1,40 @@
+plugins {
+    id 'com.android.application'
+}
+
+def vCode = (System.getenv('VERSION_CODE') ?: '1').toInteger()
+
+android {
+    namespace 'io.github.brisket990.retoucheur'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'io.github.brisket990.retoucheur'
+        minSdk 30
+        targetSdk 34
+        versionCode vCode
+        versionName "1.0.${vCode}"
+    }
+
+    signingConfigs {
+        release {
+            // Clé de signature stable : chaque nouvelle version s'installe par-dessus l'ancienne.
+            storeFile file('keystore/release.jks')
+            storePassword 'retoucheur-exif'
+            keyAlias 'retoucheur'
+            keyPassword 'retoucheur-exif'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

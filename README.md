@@ -8,3 +8,14 @@ Page web pour modifier la **date de prise de vue** et la **position GPS** d'une 
 - La position peut aussi être supprimée ; les anciennes valeurs sont effacées du fichier.
 
 Utilisation : ouvrir la page publiée sur GitHub Pages, choisir une photo, modifier, enregistrer. Le fichier modifié est une copie ; l'original n'est pas touché.
+
+## Appli Android
+
+Le dossier `android/` contient une petite appli qui affiche la même page, avec deux avantages sur le navigateur :
+
+- elle lit la photo d'origine avec sa **vraie position GPS** (autorisation « position des médias »), alors qu'Android la remplace par 0, 0 pour les navigateurs ;
+- elle enregistre directement dans la galerie, en copie ou en remplaçant la photo d'origine (après accord).
+
+L'APK est compilé par GitHub Actions à chaque modification. Dernière version : https://github.com/brisket990/Photo-editor/releases/latest/download/RetoucheurEXIF.apk
+
+La clé de signature (`android/app/keystore/release.jks`) est dans le dépôt pour que chaque version s'installe par-dessus la précédente.
