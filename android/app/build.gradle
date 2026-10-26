@@ -18,11 +18,15 @@ android {
 
     signingConfigs {
         release {
-            // Clé de signature stable : chaque nouvelle version s'installe par-dessus l'ancienne.
-            storeFile file('keystore/release.jks')
-            storePassword 'retoucheur-exif'
-            keyAlias 'retoucheur'
-            keyPassword 'retoucheur-exif'
+            // La clé n'est jamais dans le dépôt : GitHub Actions la reconstitue
+            // à partir des secrets KEYSTORE_BASE64 et KEYSTORE_PASSWORD.
+            def ks = System.getenv('KEYSTORE_PATH')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias 'retoucheur'
+                keyPassword System.getenv('KEYSTORE_PASSWORD')
+            }
         }
     }
 

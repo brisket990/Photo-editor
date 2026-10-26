@@ -18,4 +18,4 @@ Le dossier `android/` contient une petite appli qui affiche la même page, avec 
 
 L'APK est compilé par GitHub Actions à chaque modification. Dernière version : https://github.com/brisket990/Photo-editor/releases/latest/download/RetoucheurEXIF.apk
 
-La clé de signature (`android/app/keystore/release.jks`) est dans le dépôt pour que chaque version s'installe par-dessus la précédente.
+La clé de signature n'est pas dans le dépôt : elle est stockée dans les secrets GitHub Actions `KEYSTORE_BASE64` et `KEYSTORE_PASSWORD`. Sans ces secrets, la compilation s'arrête.
